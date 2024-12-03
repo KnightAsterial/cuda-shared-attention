@@ -250,6 +250,7 @@ struct Gmem_tile_o {
                 float z = reinterpret_cast<const float &>(src[ii].z);
                 float w = reinterpret_cast<const float &>(src[ii].w);
                 uint2 out = float4_to_half4(x, y, z, w);
+                // uint2 out = float4_to_half4(0f, 0f, 2f, 0f);
                 if( !HAS_INCOMPLETE_STG || (jj < STGS - 1 || this->is_active_for_last_stg_) ) {
                     fmha::stg(this->ptr_ + jj * ROWS_PER_STG * this->stride_in_bytes_, out);
                 }

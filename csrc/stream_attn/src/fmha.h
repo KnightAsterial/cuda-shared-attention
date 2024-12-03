@@ -77,6 +77,9 @@ struct Fused_multihead_attention_fprop_params : public Qkv_params {
     // The O matrix (output).
     void * __restrict__ o_ptr;
 
+    // The O2 matrix (output).
+    void * __restrict__ o2_ptr;
+
     // The stride between rows of O.
     // size_t o_stride_in_elts;
     // size_t o_stride_in_bytes;
@@ -86,6 +89,10 @@ struct Fused_multihead_attention_fprop_params : public Qkv_params {
     // The pointer to the O_tmp matrix, which holds O intermediate value during
     // the loop;
     void *__restrict__ o_tmp_ptr;
+
+    // The pointer to the O2_tmp matrix, which holds O2 intermediate value during
+    // the loop;
+    void *__restrict__ o2_tmp_ptr;
 
     // The dO matrix .
     void * __restrict__ do_ptr;

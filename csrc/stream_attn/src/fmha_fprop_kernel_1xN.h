@@ -87,14 +87,26 @@ struct Gemm_Q_K : public Gemm_Q_K_base<Kernel_traits> {
     static_assert(Kernel_traits::V_IN_REGS);
 
     static constexpr int SMEM_OFFSET_O = Smem_tile_q::BYTES_PER_TILE;
-    static constexpr int SMEM_OFFSET_SOFTMAX = SMEM_OFFSET_O + Smem_tile_o::BYTES_PER_TILE;
+    // static constexpr int SMEM_OFFSET_SOFTMAX = SMEM_OFFSET_O + Smem_tile_o::BYTES_PER_TILE;
     static constexpr int SMEM_OFFSET_V = Smem_tile_q::BYTES_PER_TILE + (SHARE_SMEM_FOR_K_AND_V ? 0 : Smem_tile_k::BYTES_PER_TILE);
 
-    // Q | K / V
-    //   | O | SOFTMAX
+    // // Q | K / V
+    // //   | O | SOFTMAX
+    // static constexpr int SMEM_BYTES = Smem_tile_q::BYTES_PER_TILE 
+    //                                 + std::max((SHARE_SMEM_FOR_K_AND_V ? 1 : 2) * Smem_tile_k::BYTES_PER_TILE,
+    //                                            Smem_tile_o::BYTES_PER_TILE + Base::SMEM_BYTES_SOFTMAX);
+   
+    // TODO: not sharing right now
+    // Q | K / V | V2 
+    //   | O     | O2 | Softmax
+    static constexpr int SMEM_OFFSET_O2 = SMEM_OFFSET_O + Smem_tile_o::BYTES_PER_TILE;
+    static constexpr int SMEM_OFFSET_V2 = SMEM_OFFSET_V + Smem_tile_k::BYTES_PER_TILE;
+    static constexpr int SMEM_OFFSET_SOFTMAX = SMEM_OFFSET_O2 + Smem_tile_o::BYTES_PER_TILE;
+    
     static constexpr int SMEM_BYTES = Smem_tile_q::BYTES_PER_TILE 
-                                    + std::max((SHARE_SMEM_FOR_K_AND_V ? 1 : 2) * Smem_tile_k::BYTES_PER_TILE,
-                                               Smem_tile_o::BYTES_PER_TILE + Base::SMEM_BYTES_SOFTMAX);
+                                    + std::max((SHARE_SMEM_FOR_K_AND_V ? 2 : 3) * Smem_tile_k::BYTES_PER_TILE,
+                                               Smem_tile_o::BYTES_PER_TILE*2 + Base::SMEM_BYTES_SOFTMAX);
+
 
     __device__ inline Gemm_Q_K(char * smem_, const int tidx) 
         : Base(smem_, smem_ + Smem_tile_q::BYTES_PER_TILE, tidx) {
@@ -150,13 +162,22 @@ struct Gemm_Q_K<Kernel_traits, false> : public Gemm_Q_K_base<Kernel_traits> {
     static constexpr int SMEM_OFFSET_V = Smem_tile_q::BYTES_PER_TILE + (SHARE_SMEM_FOR_K_AND_V ? 0 : Smem_tile_k::BYTES_PER_TILE);
     static_assert(Smem_tile_v::BYTES_PER_TILE == (int) Smem_tile_k::BYTES_PER_TILE);
     static constexpr int SMEM_OFFSET_O = SMEM_OFFSET_V + Smem_tile_v::BYTES_PER_TILE;
-    static constexpr int SMEM_OFFSET_SOFTMAX = SMEM_OFFSET_O + Smem_tile_o::BYTES_PER_TILE;
+    // static constexpr int SMEM_OFFSET_SOFTMAX = SMEM_OFFSET_O + Smem_tile_o::BYTES_PER_TILE;
 
-    // If V_IN_REGS and SHARE_SMEM_FOR_K_AND_V:      Q | K/V | O | SOFTMAX
-    // If !V_IN_REGS (then !SHARE_SMEM_FOR_K_AND_V): Q | K   | V | O | SOFTMAX
+    // // If V_IN_REGS and SHARE_SMEM_FOR_K_AND_V:      Q | K/V | O | SOFTMAX
+    // // If !V_IN_REGS (then !SHARE_SMEM_FOR_K_AND_V): Q | K   | V | O | SOFTMAX
+    // static constexpr int SMEM_BYTES = Smem_tile_q::BYTES_PER_TILE
+    //                                 + (SHARE_SMEM_FOR_K_AND_V ? 1 : 2) * Smem_tile_k::BYTES_PER_TILE 
+    //                                 + Smem_tile_o::BYTES_PER_TILE + Base::SMEM_BYTES_SOFTMAX;
+    
+    // If V_IN_REGS and SHARE_SMEM_FOR_K_AND_V:      Q | K/V | O | V2 | O2 | SOFTMAX
+    // If !V_IN_REGS (then !SHARE_SMEM_FOR_K_AND_V): Q | K   | V | O | V2 | O2 |SOFTMAX
+    static constexpr int SMEM_OFFSET_V2 = SMEM_OFFSET_O + Smem_tile_o::BYTES_PER_TILE;
+    static constexpr int SMEM_OFFSET_O2 = SMEM_OFFSET_V2 + Smem_tile_v::BYTES_PER_TILE;
+    static constexpr int SMEM_OFFSET_SOFTMAX = SMEM_OFFSET_O2 + Smem_tile_o::BYTES_PER_TILE;
     static constexpr int SMEM_BYTES = Smem_tile_q::BYTES_PER_TILE
-                                    + (SHARE_SMEM_FOR_K_AND_V ? 1 : 2) * Smem_tile_k::BYTES_PER_TILE 
-                                    + Smem_tile_o::BYTES_PER_TILE + Base::SMEM_BYTES_SOFTMAX;
+                                    + (SHARE_SMEM_FOR_K_AND_V ? 2 : 3) * Smem_tile_k::BYTES_PER_TILE 
+                                    + Smem_tile_o::BYTES_PER_TILE*2 + Base::SMEM_BYTES_SOFTMAX;
 
     __device__ inline Gemm_Q_K(char * smem_, const int tidx) 
       : Base(smem_, smem_ + Smem_tile_q::BYTES_PER_TILE, tidx) {
@@ -251,6 +272,9 @@ inline __device__ void device_1xN_(const Params &params, const int bidb, const i
     // Allocate the global memory tile loader for O.
     Gmem_tile_o gmem_o(params, binfo, tidx);
     Gmem_tile_o_tmp gmem_o_tmp(params.o_tmp_ptr, params.o_stride_in_elts, binfo, tidx);
+    // Allocate the global memory tile loader for O2.
+    Gmem_tile_o gmem_o2(params.o2_ptr, params.o_stride_in_elts, binfo, tidx);
+    Gmem_tile_o_tmp gmem_o2_tmp(params.o2_tmp_ptr, params.o_stride_in_elts, binfo, tidx);
     // Allocate the global memory tile loader for S.
     Gmem_tile_s gmem_s(params, binfo, tidx);
     Gmem_softmax_sum gmem_softmax_lse(params.softmax_lse_ptr, params, tidx);
@@ -264,6 +288,8 @@ inline __device__ void device_1xN_(const Params &params, const int bidb, const i
     gmem_q.move(begin);
     gmem_o.move(begin);
     gmem_o_tmp.move(begin);
+    gmem_o2.move(begin);
+    gmem_o2_tmp.move(begin);
     if (Return_softmax) { gmem_s.move(begin); }
     gmem_softmax_lse.move(begin);
     // if ((threadIdx.x == 0) && (blockIdx.x == 0) && (blockIdx.y == 0)) {
@@ -278,16 +304,25 @@ inline __device__ void device_1xN_(const Params &params, const int bidb, const i
     Gmem_tile_v gmem_v(params, 2, binfo, tidx);
     // The base pointer of smem_v;
     char *smem_v_ = &smem_[Gemm1::SMEM_OFFSET_V];
+    // Allocate the global memory tile loader for V2.
+    Gmem_tile_v gmem_v2(params, 2, binfo, tidx);
+    // The base pointer of smem_v;
+    char *smem_v2_ = &smem_[Gemm1::SMEM_OFFSET_V2];
     
     // Allocate the shared memory tile loader for V. We use the same as K so be careful!!!
     Smem_tile_v smem_v(smem_v_, tidx);
+    // Allocate the shared memory tile loader for V. MAYBE SHARED BE CAREFUL IDK LOL
+    Smem_tile_v smem_v2(smem_v2_, tidx);
 
     // Allocate the shared memory tile loader for O. We use the same as K so be careful!!!
     Smem_tile_o smem_o(&smem_[Gemm1::SMEM_OFFSET_O], tidx);
+    // Allocate the shared memory tile loader for O2. MAYBE SHARED BE CAREFUL IDK LOL
+    Smem_tile_o smem_o2(&smem_[Gemm1::SMEM_OFFSET_O2], tidx);
 
     if (!Is_first) {
         gmem_k.move(loop_step_idx);
         gmem_v.move(loop_step_idx);
+        gmem_v2.move(loop_step_idx);
         if (Return_softmax) { gmem_s.move(loop_step_idx * steps_og); }
     }
 
@@ -297,6 +332,8 @@ inline __device__ void device_1xN_(const Params &params, const int bidb, const i
     gmem_q.load();
     // Trigger the loads for V.
     gmem_v.load();
+    // Trigger the loads for V2.
+    gmem_v2.load();
 
     if (!Is_first) { __syncthreads(); }
 
@@ -308,6 +345,7 @@ inline __device__ void device_1xN_(const Params &params, const int bidb, const i
     // Commit the data for Q and V to shared memory.
     gmem_q.commit(gemm_q_k.smem_q);
     gmem_v.commit(smem_v);
+    gmem_v2.commit(smem_v2);
 
     // const uint32_t scale_bmm1 = reinterpret_cast<const uint32_t&>(params.scale_bmm1);
     // #pragma unroll
@@ -327,9 +365,11 @@ inline __device__ void device_1xN_(const Params &params, const int bidb, const i
 
     // Load the fragments for V. We keep the data in registers during the entire kernel.
     typename Smem_tile_v::Fragment frag_v[Mma_tile_o::MMAS_K][Mma_tile_o::MMAS_N];
+    typename Smem_tile_v::Fragment frag_v2[Mma_tile_o::MMAS_K][Mma_tile_o::MMAS_N];
     #pragma unroll
     for( int ki = 0; ki < Mma_tile_o::MMAS_K; ++ki ) {
         smem_v.load(frag_v[ki], ki);
+        smem_v2.load(frag_v2[ki], ki);
     }
 
     // Commit the data for V to shared memory if it has not been done already.
@@ -364,7 +404,8 @@ inline __device__ void device_1xN_(const Params &params, const int bidb, const i
         gemm_q_k(acc_p);
 
         uint4 out[Gmem_tile_o::STGS_PER_LOOP];
-        if (!Is_first) { gmem_o_tmp.load(out, 0); }
+        uint4 out2[Gmem_tile_o::STGS_PER_LOOP];
+        if (!Is_first) { gmem_o_tmp.load(out, 0); gmem_o2_tmp.load(out2, 0); }
 
         // Trigger the load for the next Q values.
         if( l < steps - 1) {
@@ -492,12 +533,16 @@ inline __device__ void device_1xN_(const Params &params, const int bidb, const i
 
         // Declare the accumulators for the 2nd gemm.
         fmha::Fragment_accumulator acc_o[Mma_tile_o::MMAS_M][Mma_tile_o::MMAS_N];
+        fmha::Fragment_accumulator acc_o2[Mma_tile_o::MMAS_M][Mma_tile_o::MMAS_N];
         fmha::Clear_accumulator<typename fmha::Accumulator_type, Cta_tile_o::WARPS_K>::apply(acc_o);
+        fmha::Clear_accumulator<typename fmha::Accumulator_type, Cta_tile_o::WARPS_K>::apply(acc_o2);
 
         // Do this part of O = P^T * V^T.
+        // Do this part of O2 = P^T * V2^T.
         #pragma unroll
         for( int ki = 0; ki < Mma_tile_o::MMAS_K; ++ki ) {
             fmha::gemm(acc_o, frag_p[ki], frag_v[ki]);
+            fmha::gemm(acc_o2, frag_p[ki], frag_v2[ki]);
         }
 
         // The mapping from tidx to rows changes between the softmax and the O-reduction.
@@ -525,6 +570,7 @@ inline __device__ void device_1xN_(const Params &params, const int bidb, const i
 
         // Swizzle the elements and do the final reduction.
         smem_o.store(acc_o, 0);
+        smem_o2.store(acc_o2, 0);
 
         // Make sure the data is in shared memory.
         __syncthreads();
@@ -563,6 +609,7 @@ inline __device__ void device_1xN_(const Params &params, const int bidb, const i
         if (!Is_first) {
             for (int jj = 0; jj < Gmem_tile_o::STGS_PER_LOOP; jj++) {
                 out[jj] = fmha::fmul4(out[jj], p_prev_scale_o[jj]);
+                out2[jj] = fmha::fmul4(out2[jj], p_prev_scale_o[jj]);
             }
         }
         smem_o.template load</*zero_init=*/Is_first>(out);
@@ -579,6 +626,9 @@ inline __device__ void device_1xN_(const Params &params, const int bidb, const i
                 inv_sum *= params.rp_dropout;
             }
             out[jj] = fmha::fmul4(out[jj], inv_sum);
+            out2[jj] = fmha::fmul4(out2[jj], inv_sum);
+            // uint4 test = 2;
+            // out2[jj] = fmha::fmul4(test, test)
         }
 
         // if (Is_dropout && Is_last) {
@@ -591,12 +641,15 @@ inline __device__ void device_1xN_(const Params &params, const int bidb, const i
         if (is_final_write) {
             gmem_o.store(out, 0);
             gmem_o.move();
+            gmem_o2.store(out2, 0);
+            gmem_o2.move();
         } else {
             gmem_o_tmp.store(out, 0);
+            gmem_o2_tmp.store(out2, 0);
         }
 
         // Move to the next part of the output.
-        if (!(Is_first && Is_last)) { gmem_o_tmp.move(); }
+        if (!(Is_first && Is_last)) { gmem_o_tmp.move(); gmem_o2_tmp.move();}
         gemm_q_k.reload_k();
 
         // Make sure we are reading from the correct buffer.

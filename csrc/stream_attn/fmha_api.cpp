@@ -59,8 +59,8 @@ void set_params(Fused_multihead_attention_fprop_params &params,
 
     // Set the pointers and strides.
     params.qkv_ptr = qkv_packed_d;
-    params.qkv_stride_in_elts = h * 3 * d;
-    params.qkv_stride_in_bytes = get_size_in_bytes(h * 3 * d, data_type);
+    params.qkv_stride_in_elts = h * 4 * d;
+    params.qkv_stride_in_bytes = get_size_in_bytes(h * 4 * d, data_type);
     params.o_ptr = o_packed_d;
     params.o2_ptr = o2_packed_d;
     params.o_stride_in_elts = h * d;

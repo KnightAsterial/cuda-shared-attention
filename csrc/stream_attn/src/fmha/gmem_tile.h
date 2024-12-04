@@ -41,7 +41,7 @@ template<
     // The number of columns.
     int COLS,
     // The number of matrics.
-    int NUM_MATS = 3
+    int NUM_MATS = 4
 >
 struct Gmem_tile_qkv {
 

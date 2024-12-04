@@ -305,7 +305,7 @@ inline __device__ void device_1xN_(const Params &params, const int bidb, const i
     // The base pointer of smem_v;
     char *smem_v_ = &smem_[Gemm1::SMEM_OFFSET_V];
     // Allocate the global memory tile loader for V2.
-    Gmem_tile_v gmem_v2(params, 2, binfo, tidx);
+    Gmem_tile_v gmem_v2(params, 3, binfo, tidx);
     // The base pointer of smem_v;
     char *smem_v2_ = &smem_[Gemm1::SMEM_OFFSET_V2];
     
@@ -613,6 +613,7 @@ inline __device__ void device_1xN_(const Params &params, const int bidb, const i
             }
         }
         smem_o.template load</*zero_init=*/Is_first>(out);
+        smem_o2.template load</*zero_init=*/Is_first>(out2);
 
         const bool is_final_write =
             Is_last
@@ -636,6 +637,7 @@ inline __device__ void device_1xN_(const Params &params, const int bidb, const i
         //         out[jj] = fmha::fmul4(out[jj], params.rp_dropout);
         //     }
         // }
+        // printf("The numbers in out2 are (v2): %u, %u, %u, %u\n", out2[0].w, out2[0].x, out2[0].y, out2[0].z);
 
         // Output the values.
         if (is_final_write) {
